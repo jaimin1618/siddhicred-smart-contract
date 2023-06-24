@@ -16,7 +16,7 @@ contract SiddhiCred is ERC721, ERC721URIStorage, AccessControl {
 
     constructor() ERC721("Siddhi Credential Soulbound NFT", "SCSBNFT") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
-        _grantRole(ISSUER_ROLE, msg.sender);
+        admin = msg.sender;
     }
 
     /*============================================
