@@ -87,12 +87,13 @@ contract SiddhiCred is ERC721, ERC721URIStorage, AccessControl {
     function issueCertificate(
         address to,
         string memory contentHash
-    ) external onlyRole(ISSUER_ROLE) {
+    ) external onlyRole(ISSUER_ROLE) returns (uint256 NFTTokenId) {
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, contentHash);
         emit CertificateIssued(msg.sender, to, tokenId);
+        return tokenId;
     }
 
     function _burn(
@@ -134,7 +135,7 @@ contract SiddhiCred is ERC721, ERC721URIStorage, AccessControl {
         uint256 batchSize
     ) internal virtual override {
         require(
-            from == address(0),
+            from == address(0) || to == address(0),
             "Soulbound tokens cannot be transferred, Token transfer is BLOCKED"
         );
         super._beforeTokenTransfer(from, to, tokenId, batchSize);
