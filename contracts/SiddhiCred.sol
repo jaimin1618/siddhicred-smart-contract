@@ -13,16 +13,53 @@ contract SiddhiCred is
     ERC721Enumerable,
     AccessControl
 {
-    address public admin;
-    mapping(address => string) aboutIssuer;
+    /*============================================
+    Data structures and containers
+    ============================================*/
+    // constants and namespaces
+    bytes32 public constant ISSUER_ROLE = keccak256("ISSUER");
     using Counters for Counters.Counter;
 
-    bytes32 public constant ISSUER_ROLE = keccak256("ISSUER");
+    // variables
+    address public admin;
     Counters.Counter private _tokenIdCounter;
 
+    // mappings
+    // issuer public address => Issuer content Hash CID | updates only when new issuer is created or issuer is removed
+    mapping(address => string) public aboutIssuer;
+
+    // list of all token/certificates issued by issuer address | updates when new tokens is issued by issuer or token is revoked by issuer
+    mapping(address => uint256[]) issuedTokens;
+
+    // list of all issuers | add / remove when issuer is create or removed
+    address[] private issuers;
+
+    /*============================================
+    contract Constructor - ctor
+    ============================================*/
     constructor() ERC721("Siddhi Credential Soulbound NFT", "SCSBNFT") {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         admin = msg.sender;
+    }
+
+    /*============================================
+    Application modifiers 
+    ============================================*/
+    modifier onlyCertificateIssuer(uint256 tokenId) {
+        bool isFound = false;
+        uint256 length = issuedTokens[msg.sender].length;
+
+        // check if token is issued by current issuer or NOT
+        for (uint256 i = 0; i < length; ++i) {
+            uint256 id = issuedTokens[msg.sender][i];
+            if (id == tokenId) {
+                isFound = true;
+                break;
+            }
+        }
+
+        require(isFound, "This certificate is not issued by current issuer.");
+        _;
     }
 
     /*============================================
@@ -59,8 +96,9 @@ contract SiddhiCred is
         if (hasRole(ISSUER_ROLE, issuerWalletAddress))
             revert IssuerRoleAlreadyAssigned(issuerWalletAddress);
 
-        aboutIssuer[issuerWalletAddress] = contentHash;
         _grantRole(ISSUER_ROLE, issuerWalletAddress);
+        issuers.push(issuerWalletAddress);
+        aboutIssuer[issuerWalletAddress] = contentHash;
         emit IssuerCreated(issuerWalletAddress, contentHash);
     }
 
@@ -70,8 +108,28 @@ contract SiddhiCred is
         if (!hasRole(ISSUER_ROLE, issuerWalletAddress))
             revert IssuerNotFound(issuerWalletAddress);
 
-        string memory contentHash = aboutIssuer[issuerWalletAddress];
         _revokeRole(ISSUER_ROLE, issuerWalletAddress);
+
+        // remove issuer from issuer[] dynamic container
+        bool isFound = false;
+        uint256 length = issuers.length;
+        address lastIssuer = issuers[length - 1];
+
+        for (uint256 i = 0; i < length; ++i) {
+            if (issuers[i] == issuerWalletAddress) {
+                issuers[i] = lastIssuer;
+                isFound = true;
+                break;
+            }
+        }
+
+        if (isFound) {
+            // remove duplicate issuer
+            issuers.pop();
+        }
+
+        // delete issuer contentHash from mapping
+        string memory contentHash = aboutIssuer[issuerWalletAddress];
         emit IssuerRemoved(issuerWalletAddress, contentHash);
         delete aboutIssuer[issuerWalletAddress];
     }
@@ -87,6 +145,15 @@ contract SiddhiCred is
         emit IssuerUpdated(issuerWalletAddress, contentHash);
     }
 
+    function getIssuersList()
+        external
+        view
+        onlyRole(DEFAULT_ADMIN_ROLE)
+        returns (address[] memory)
+    {
+        return issuers;
+    }
+
     // /*============================================
     // ISSUER_ROLE methods | Create/Mint/Issue Certificate | Burn/Revoke Certificate
     // ============================================*/
@@ -98,6 +165,10 @@ contract SiddhiCred is
         _tokenIdCounter.increment();
         _safeMint(to, tokenId);
         _setTokenURI(tokenId, contentHash);
+
+        // update tokens issued by issuer mapping and user owned tokens mapping
+        issuedTokens[msg.sender].push(tokenId);
+
         emit CertificateIssued(msg.sender, to, tokenId);
         return tokenId;
     }
@@ -108,11 +179,42 @@ contract SiddhiCred is
         super._burn(tokenId);
     }
 
-    function burnCertificate(uint256 tokenId) external onlyRole(ISSUER_ROLE) {
+    function burnCertificate(
+        uint256 tokenId
+    ) external onlyRole(ISSUER_ROLE) onlyCertificateIssuer(tokenId) {
         address owner = ownerOf(tokenId);
         if (owner == address(0)) revert TokenNotFound(tokenId);
+
+        // update tokens issued by issuer mapping
+        bool isFound = false;
+        uint256 length = issuedTokens[msg.sender].length;
+        uint256 lastTokenId = issuedTokens[msg.sender][length - 1];
+
+        for (uint256 i = 0; i < length; ++i) {
+            uint256 id = issuedTokens[msg.sender][i];
+            if (id == tokenId) {
+                issuedTokens[msg.sender][i] = lastTokenId;
+                isFound = true;
+                break;
+            }
+        }
+
+        if (isFound) {
+            // remove last blank (now duplicated tokenId)
+            issuedTokens[msg.sender].pop();
+        }
+
         emit CertificateRevoked(msg.sender, owner, tokenId);
         _burn(tokenId);
+    }
+
+    function getIssuedTokenList()
+        external
+        view
+        onlyRole(ISSUER_ROLE)
+        returns (uint256[] memory)
+    {
+        return issuedTokens[msg.sender];
     }
 
     function supportsInterface(
@@ -176,6 +278,7 @@ contract SiddhiCred is
         return "USER";
     }
 
+    // get all tokenIds owned by current user
     function tokensOfOwner() public view returns (uint256[] memory tokenId) {
         uint256 tokenCount = balanceOf(msg.sender);
         uint256[] memory tokenIds = new uint256[](tokenCount);
