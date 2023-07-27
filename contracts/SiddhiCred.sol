@@ -85,6 +85,9 @@ contract SiddhiCred is
     error IssuerRoleAlreadyAssigned(address issuerWalletAddress);
     error IssuerNotFound(address issuerWalletAddress);
     error TokenNotFound(uint256 tokenId);
+    error ProvidedPublicAddressIsUserRole(address walletAddress);
+    error ProvidedPublicAddressIsIssueRole(address walletAddress);
+    error UserAlreadyOwnsTokens(address walletAddress);
 
     /*============================================
     ADMIN_ROLE method | manage issuer
@@ -95,6 +98,9 @@ contract SiddhiCred is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (hasRole(ISSUER_ROLE, issuerWalletAddress))
             revert IssuerRoleAlreadyAssigned(issuerWalletAddress);
+        // User account (wallet public address) cannot HOLD ISSUER Role.
+        if (balanceOf(issuerWalletAddress) > 0)
+            revert ProvidedPublicAddressIsUserRole(issuerWalletAddress);
 
         _grantRole(ISSUER_ROLE, issuerWalletAddress);
         issuers.push(issuerWalletAddress);
@@ -154,6 +160,33 @@ contract SiddhiCred is
         return issuers;
     }
 
+    function getFirstToken(
+        address to,
+        string memory contentHash
+    ) external returns (uint256 NFTTokenId) {
+        require(
+            balanceOf(to) == 0,
+            "Cannot mint token! User balance is more than Zero (0) and already owns tokens."
+        );
+
+        require(
+            !hasRole(ISSUER_ROLE, to),
+            "Provided public address is already issuer! Cannot issue certificate to issuer."
+        );
+
+        // issue first certificate
+        uint256 tokenId = _tokenIdCounter.current();
+        _tokenIdCounter.increment();
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, contentHash);
+
+        // update tokens issued by issuer mapping and user owned tokens mapping
+        issuedTokens[msg.sender].push(tokenId);
+
+        emit CertificateIssued(msg.sender, to, tokenId);
+        return tokenId;
+    }
+
     // /*============================================
     // ISSUER_ROLE methods | Create/Mint/Issue Certificate | Burn/Revoke Certificate
     // ============================================*/
@@ -161,6 +194,11 @@ contract SiddhiCred is
         address to,
         string memory contentHash
     ) external onlyRole(ISSUER_ROLE) returns (uint256 NFTTokenId) {
+        require(
+            !hasRole(ISSUER_ROLE, to),
+            "Provided public address is already issuer! Cannot issue certificate to issuer."
+        );
+
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
         _safeMint(to, tokenId);
