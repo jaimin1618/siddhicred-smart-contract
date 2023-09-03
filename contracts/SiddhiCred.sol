@@ -18,6 +18,7 @@ contract SiddhiCred is
     ============================================*/
     // constants and namespaces
     bytes32 public constant ISSUER_ROLE = keccak256("ISSUER");
+    bytes32 public constant EARNER_ROLE = keccak256("EARNER");
     using Counters for Counters.Counter;
 
     // variables
@@ -27,12 +28,15 @@ contract SiddhiCred is
     // mappings
     // issuer public address => Issuer content Hash CID | updates only when new issuer is created or issuer is removed
     mapping(address => string) public aboutIssuer;
+    mapping(address => string) public aboutEarner;
 
     // list of all token/certificates issued by issuer address | updates when new tokens is issued by issuer or token is revoked by issuer
     mapping(address => uint256[]) issuedTokens;
 
     // list of all issuers | add / remove when issuer is create or removed
     address[] private issuers;
+
+    // address[] private earners; wait do we need this!
 
     /*============================================
     contract Constructor - ctor
@@ -59,6 +63,14 @@ contract SiddhiCred is
         }
 
         require(isFound, "This certificate is not issued by current issuer.");
+        _;
+    }
+
+    modifier onlyEarnerAccount() {
+        require(
+            hasRole(EARNER_ROLE, msg.sender),
+            "Only earner themself can update their information."
+        );
         _;
     }
 
@@ -98,7 +110,9 @@ contract SiddhiCred is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (hasRole(ISSUER_ROLE, issuerWalletAddress))
             revert IssuerRoleAlreadyAssigned(issuerWalletAddress);
-        // User account (wallet public address) cannot HOLD ISSUER Role.
+        if (hasRole(EARNER_ROLE, issuerWalletAddress))
+            revert ProvidedPublicAddressIsUserRole(issuerWalletAddress);
+        // User account (wallet public address) cannot HOLD ISSUER Role. No Need, will be removed soon.
         if (balanceOf(issuerWalletAddress) > 0)
             revert ProvidedPublicAddressIsUserRole(issuerWalletAddress);
 
@@ -174,6 +188,12 @@ contract SiddhiCred is
             "Provided public address is already issuer! Cannot issue certificate to issuer."
         );
 
+        // comment out this line - to let first token issued to guest accounts for showcase.
+        require(
+            hasRole(EARNER_ROLE, to),
+            "Provided public address must register as a user before getting first token."
+        );
+
         // issue first certificate
         uint256 tokenId = _tokenIdCounter.current();
         _tokenIdCounter.increment();
@@ -197,6 +217,11 @@ contract SiddhiCred is
         require(
             !hasRole(ISSUER_ROLE, to),
             "Provided public address is already issuer! Cannot issue certificate to issuer."
+        );
+
+        require(
+            hasRole(EARNER_ROLE, to),
+            "Provided public address is NOT REGISTERED as earner, he/she must register as a earner to receive certificate."
         );
 
         uint256 tokenId = _tokenIdCounter.current();
@@ -306,14 +331,16 @@ contract SiddhiCred is
 
     function getWalletAddressRole(
         address walletAddress
-    ) external view returns (string memory role) {
+    ) public view returns (string memory role) {
         if (hasRole(DEFAULT_ADMIN_ROLE, walletAddress)) {
             return "ADMIN";
         } else if (hasRole(ISSUER_ROLE, walletAddress)) {
             return "ISSUER";
+        } else if (hasRole(EARNER_ROLE, walletAddress)) {
+            return "EARNER";
         }
 
-        return "USER";
+        return "GUEST";
     }
 
     // get all tokenIds owned by current user
@@ -326,74 +353,38 @@ contract SiddhiCred is
 
         return tokenIds;
     }
+
+    // upgrade - New user named "EARNER" method
+    function registerEarner(string memory cid) external {
+        require(
+            !hasRole(ISSUER_ROLE, msg.sender),
+            "Issuer cannot register as earner."
+        );
+
+        require(
+            !hasRole(EARNER_ROLE, msg.sender),
+            "This account is already registered as earner, cannot re-register it."
+        );
+
+        aboutEarner[msg.sender] = cid;
+        grantRole(EARNER_ROLE, msg.sender);
+    }
+
+    function getEarnerAccountInfo(
+        address earnerAddress
+    ) external view returns (string memory cid) {
+        return aboutEarner[earnerAddress];
+    }
+
+    function updateEarnerInfo(string memory newCid) external onlyEarnerAccount {
+        aboutEarner[msg.sender] = newCid;
+    }
+
     /*============================================
-    Overriding unnecessary inherited methods
+    Upcoming features - delete account, burn all issued tokens to this account.
     ============================================*/
-    // function approve(address to, uint256 tokenId)
-    //     public
-    //     virtual
-    //     override(ERC721, IERC721)
-    // {}
-
-    // function grantRole(bytes32 role, address account) public override {}
-
-    // function revokeRole(bytes32 role, address account) public override {}
-
-    // function renounceRole(bytes32 role, address account) public override {}
-
-    // function safeTransferFrom(
-    //     address from,
-    //     address to,
-    //     uint256 tokenId
-    // ) public virtual override(ERC721, IERC721) {}
-
-    // function safeTransferFrom(
-    //     address from,
-    //     address to,
-    //     uint256 tokenId,
-    //     bytes memory data
-    // ) public virtual override(ERC721, IERC721) {}
-
-    // function setApprovalForAll(address operator, bool approved)
-    //     public
-    //     override(ERC721, IERC721)
-    // {}
-
-    // function transferFrom(
-    //     address from,
-    //     address to,
-    //     uint256 tokenId
-    // ) public virtual override(ERC721, IERC721) {}
-
-    // function getApproved(uint256 tokenId)
-    //     public
-    //     view
-    //     virtual
-    //     override(ERC721, IERC721)
-    //     returns (address)
-    // {}
-
-    // function getRoleAdmin(bytes32 role)
-    //     public
-    //     view
-    //     virtual
-    //     override
-    //     returns (bytes32)
-    // {}
-
-    // function hasRole(bytes32 role, address account)
-    //     public
-    //     view
-    //     virtual
-    //     override
-    //     returns (bool)
-    // {}
-
-    // function isApprovedForAll(address owner, address operator)
-    //     public
-    //     view
-    //     virtual
-    //     override(ERC721, IERC721)
-    //     returns (bool)
-    // {}
+    // function removeEarnerAccount() external onlyEarnerAccount {
+    //     revokeRole(EARNER_ROLE, msg.sender);
+    //     aboutEarner[msg.sender] = "";
+    // }
 }
