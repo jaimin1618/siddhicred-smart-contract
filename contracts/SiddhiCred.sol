@@ -383,8 +383,4 @@ contract SiddhiCred is
     /*============================================
     Upcoming features - delete account, burn all issued tokens to this account.
     ============================================*/
-    // function removeEarnerAccount() external onlyEarnerAccount {
-    //     revokeRole(EARNER_ROLE, msg.sender);
-    //     aboutEarner[msg.sender] = "";
-    // }
 }
