@@ -367,7 +367,7 @@ contract SiddhiCred is
         );
 
         aboutEarner[msg.sender] = cid;
-        grantRole(EARNER_ROLE, msg.sender);
+        _grantRole(EARNER_ROLE, msg.sender);
     }
 
     function getEarnerAccountInfo(
